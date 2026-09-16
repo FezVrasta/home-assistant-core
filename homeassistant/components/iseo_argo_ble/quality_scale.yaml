@@ -40,9 +40,7 @@ rules:
   integration-owner: done
   log-when-unavailable: done
   parallel-updates: done
-  reauthentication-flow:
-    status: exempt
-    comment: Uses a locally-generated cryptographic identity that does not expire.
+  reauthentication-flow: done
   test-coverage: done
 
   # Gold

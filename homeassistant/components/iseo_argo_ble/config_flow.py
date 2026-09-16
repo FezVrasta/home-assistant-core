@@ -1,5 +1,6 @@
 """Config flow for ISEO Argo BLE Lock."""
 
+from collections.abc import Mapping
 import logging
 from typing import Any, override
 import uuid as uuid_module
@@ -74,6 +75,14 @@ class IseoConfigFlow(ConfigFlow, domain=DOMAIN):
         self._uuid_hex: str = ""
         self._priv_scalar: str = ""
 
+    async def _async_generate_identity(self, address: str, name: str) -> None:
+        """Generate the gateway identity this flow will enroll on the lock."""
+        priv = await self.hass.async_add_executor_job(_generate_identity)
+        self._address = address
+        self._device_name = name
+        self._uuid_hex = uuid_module.uuid4().bytes.hex()
+        self._priv_scalar = hex(priv.private_numbers().private_value)
+
     @property
     def _entry_data(self) -> dict[str, str]:
         """Return the config entry data for the identity being enrolled."""
@@ -82,6 +91,31 @@ class IseoConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_UUID: self._uuid_hex,
             CONF_PRIV_SCALAR: self._priv_scalar,
         }
+
+    async def _async_enroll_gateway(self, data: Mapping[str, Any]) -> dict[str, str]:
+        """Register the identity in ``data`` as a gateway on the lock.
+
+        Returns the form errors, empty when the enrollment succeeded.
+        """
+        if not (
+            ble_device := async_ble_device_from_address(
+                self.hass, data[CONF_ADDRESS], connectable=True
+            )
+        ):
+            return {"base": "cannot_connect"}
+
+        client = await async_build_client(self.hass, data, ble_device)
+        try:
+            await client.setup_gateway(name=GATEWAY_NAME)
+        except IseoConnectionError:
+            return {"base": "cannot_connect"}
+        except IseoAuthError as exc:
+            _LOGGER.debug("Gateway setup failed: %s", exc)
+            return {"base": "auth_failed"}
+        except Exception:
+            _LOGGER.exception("Unexpected error during gateway setup")
+            return {"base": "unknown"}
+        return {}
 
     @override
     async def async_step_user(
@@ -94,16 +128,10 @@ class IseoConfigFlow(ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(format_mac(address))
             self._abort_if_unique_id_configured()
 
-            priv = await self.hass.async_add_executor_job(_generate_identity)
-            priv_int = priv.private_numbers().private_value
-            new_uuid = uuid_module.uuid4().bytes
-
-            self._address = address
-            self._device_name = (
-                self._discovered[address].name if address in self._discovered else ""
+            discovered = self._discovered.get(address)
+            await self._async_generate_identity(
+                address, discovered.name if discovered else ""
             )
-            self._uuid_hex = new_uuid.hex()
-            self._priv_scalar = hex(priv_int)
 
             return await self.async_step_gw_register()
 
@@ -154,14 +182,9 @@ class IseoConfigFlow(ConfigFlow, domain=DOMAIN):
         if not is_iseo_advertisement(list(discovery_info.service_uuids or [])):
             return self.async_abort(reason="not_iseo_device")
 
-        priv = await self.hass.async_add_executor_job(_generate_identity)
-        priv_int = priv.private_numbers().private_value
-        new_uuid = uuid_module.uuid4().bytes
-
-        self._address = discovery_info.address
-        self._device_name = discovery_info.name or discovery_info.address
-        self._uuid_hex = new_uuid.hex()
-        self._priv_scalar = hex(priv_int)
+        await self._async_generate_identity(
+            discovery_info.address, discovery_info.name or discovery_info.address
+        )
 
         self.context["title_placeholders"] = {"name": self._device_name}
         return await self.async_step_bluetooth_confirm()
@@ -184,36 +207,32 @@ class IseoConfigFlow(ConfigFlow, domain=DOMAIN):
         """Register the gateway and enable log notifications (requires Master Card)."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            if not (
-                ble_device := async_ble_device_from_address(
-                    self.hass, self._address, connectable=True
+            entry_data = self._entry_data
+            if not (errors := await self._async_enroll_gateway(entry_data)):
+                return self.async_create_entry(
+                    title=self._device_name or f"ISEO Lock ({self._address})",
+                    data=entry_data,
                 )
-            ):
-                errors["base"] = "cannot_connect"
-            else:
-                client = await async_build_client(
-                    self.hass, self._entry_data, ble_device
-                )
-                try:
-                    await client.setup_gateway(name=GATEWAY_NAME)
-                    return self._async_create_iseo_entry()
-                except IseoConnectionError:
-                    errors["base"] = "cannot_connect"
-                except IseoAuthError as exc:
-                    _LOGGER.debug("Gateway setup failed: %s", exc)
-                    errors["base"] = "auth_failed"
-                except Exception:
-                    _LOGGER.exception("Unexpected error during gateway setup")
-                    errors["base"] = "unknown"
 
         return self.async_show_form(
             step_id="gw_register",
             errors=errors,
         )
 
-    def _async_create_iseo_entry(self) -> ConfigFlowResult:
-        """Create the final config entry."""
-        return self.async_create_entry(
-            title=self._device_name or f"ISEO Lock ({self._address})",
-            data=self._entry_data,
-        )
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
+    ) -> ConfigFlowResult:
+        """Handle the lock no longer accepting the stored gateway identity."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Re-enroll the stored gateway identity on the lock."""
+        reauth_entry = self._get_reauth_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if not (errors := await self._async_enroll_gateway(reauth_entry.data)):
+                return self.async_update_reload_and_abort(reauth_entry)
+
+        return self.async_show_form(step_id="reauth_confirm", errors=errors)

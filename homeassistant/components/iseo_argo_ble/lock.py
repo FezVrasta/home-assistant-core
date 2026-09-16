@@ -144,6 +144,7 @@ class IseoLockEntity(IseoEntity, LockEntity):
                 await self.coordinator.client.gw_open(remote_user_name=GATEWAY_NAME)
         except IseoAuthError as exc:
             self._set_locked()
+            self.coordinator.config_entry.async_start_reauth(self.hass)
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="lock_rejected_identity",

@@ -3,7 +3,8 @@
     "abort": {
       "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
       "no_devices_found": "[%key:common::config_flow::abort::no_devices_found%]",
-      "not_iseo_device": "This device does not appear to be an ISEO lock."
+      "not_iseo_device": "This device does not appear to be an ISEO lock.",
+      "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
     },
     "error": {
       "auth_failed": "The lock rejected the request. Make sure the Argo app is closed, then try again — scan a valid Master Card on the lock (the LED will blink green on success).",
@@ -19,6 +20,10 @@
       "gw_register": {
         "description": "To register Home Assistant as a Gateway:\n\n**Warning:** Close the ARGO app before clicking Submit.\n\n1. Click **Submit** below.\n2. **Within 30 seconds**, scan your physical **Master Card** on the lock.\n\nThe lock will blink green once the card is read successfully.",
         "title": "Register gateway"
+      },
+      "reauth_confirm": {
+        "description": "The lock no longer accepts Home Assistant as a gateway, which happens when the Home Assistant user is deleted from the lock in the ARGO app.\n\nTo enroll Home Assistant again:\n\n**Warning:** Close the ARGO app before clicking Submit.\n\n1. Click **Submit** below.\n2. **Within 30 seconds**, scan your physical **Master Card** on the lock.\n\nThe lock will blink green once the card is read successfully.",
+        "title": "Re-register gateway"
       },
       "user": {
         "data": {
@@ -42,7 +47,7 @@
       "message": "Manual locking is not supported by this device. The lock will automatically re-latch after being opened."
     },
     "lock_rejected_identity": {
-      "message": "Lock rejected the identity. Ensure the UUID is registered in the Argo app."
+      "message": "The lock rejected the Home Assistant identity. Re-register Home Assistant as a gateway from the integration page, scanning the Master Card when prompted."
     }
   }
 }

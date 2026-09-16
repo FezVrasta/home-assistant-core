@@ -10,8 +10,9 @@ import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from homeassistant.components.bluetooth.const import UNAVAILABLE_TRACK_SECONDS
-from homeassistant.components.iseo_argo_ble.const import RELOCK_DELAY
+from homeassistant.components.iseo_argo_ble.const import DOMAIN, RELOCK_DELAY
 from homeassistant.components.lock import DOMAIN as LOCK_DOMAIN, LockState
+from homeassistant.config_entries import SOURCE_REAUTH
 from homeassistant.const import (
     ATTR_ASSUMED_STATE,
     ATTR_ENTITY_ID,
@@ -277,11 +278,11 @@ async def test_lock_action_is_not_supported(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.usefixtures("config_entry")
-async def test_unlock_rejected_identity(
+async def test_unlock_rejected_identity_starts_reauth(
     hass: HomeAssistant,
     mock_iseo_client: MagicMock,
 ) -> None:
-    """Test unlocking raises when the lock rejects the stored identity."""
+    """Test unlocking raises and asks for re-enrollment on a rejected identity."""
     mock_iseo_client.gw_open.side_effect = IseoAuthError("bad auth")
 
     with pytest.raises(HomeAssistantError) as excinfo:
@@ -289,6 +290,10 @@ async def test_unlock_rejected_identity(
 
     assert excinfo.value.translation_key == "lock_rejected_identity"
     assert hass.states.get(ENTITY_ID).state == LockState.LOCKED
+
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert len(flows) == 1
+    assert flows[0]["context"]["source"] == SOURCE_REAUTH
 
 
 @pytest.mark.usefixtures("config_entry")

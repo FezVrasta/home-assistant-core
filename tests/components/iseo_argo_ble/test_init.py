@@ -7,7 +7,7 @@ from iseo_argo_ble import IseoAuthError, IseoConnectionError, LockState
 import pytest
 
 from homeassistant.components.iseo_argo_ble.const import DOMAIN, STATE_POLL_INTERVAL
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 
@@ -121,21 +121,19 @@ async def test_poll_unexpected_error_is_logged(
     assert "unexpected error while polling" in caplog.text
 
 
-async def test_poll_auth_error_logs_once(
+async def test_poll_auth_error_starts_reauth(
     hass: HomeAssistant,
     config_entry: MockConfigEntry,
     mock_iseo_client: MagicMock,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Test a rejected identity is reported once, not on every poll."""
+    """Test a rejected identity during a poll starts a reauthentication flow."""
     mock_iseo_client.read_state.side_effect = IseoAuthError("rejected")
 
     await trigger_poll(hass)
-    assert caplog.text.count("rejected the Home Assistant identity") == 1
 
-    caplog.clear()
-    await trigger_poll(hass)
-    assert "rejected the Home Assistant identity" not in caplog.text
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert len(flows) == 1
+    assert flows[0]["context"]["source"] == SOURCE_REAUTH
 
 
 async def test_poll_is_throttled_to_the_poll_interval(

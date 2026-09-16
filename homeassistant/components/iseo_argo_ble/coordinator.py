@@ -110,16 +110,11 @@ class IseoCoordinator(ActiveBluetoothDataUpdateCoordinator[LockState | None]):
             self.data = await self._async_poll_data(self._last_service_info)
             self.poll_count += 1
         except IseoAuthError as exc:
-            if self.last_poll_successful:
-                # A rejected identity never recovers on its own: the gateway has
-                # to be enrolled on the lock again.
-                _LOGGER.warning(
-                    "%s rejected the Home Assistant identity (%s), delete the "
-                    "integration and set it up again to enroll it anew",
-                    self.name,
-                    exc,
-                )
-                self.last_poll_successful = False
+            # A rejected identity never recovers on its own: the gateway has to
+            # be enrolled on the lock again by scanning the Master Card.
+            _LOGGER.debug("Lock rejected the Home Assistant identity: %s", exc)
+            self.last_poll_successful = False
+            self.config_entry.async_start_reauth(self.hass)
             return
         except (IseoConnectionError, BleakError, TimeoutError, OSError) as exc:
             if self.last_poll_successful:

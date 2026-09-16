@@ -16,7 +16,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.device_registry import format_mac
 
-from . import MOCK_ADDRESS, MOCK_SERVICE_INFO, MOCK_UUID_HEX
+from . import MOCK_ADDRESS, MOCK_PRIV_SCALAR, MOCK_SERVICE_INFO, MOCK_UUID_HEX
 
 from tests.common import MockConfigEntry
 
@@ -352,3 +352,86 @@ async def test_generate_identity() -> None:
     assert priv is not None
     # SECP224R1 is 224 bits
     assert priv.key_size == 224
+
+
+@pytest.mark.usefixtures("_patch_identity")
+async def test_reauth_flow(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_iseo_client: MagicMock,
+) -> None:
+    """Test re-enrolling the stored identity after the lock rejected it."""
+    mock_config_entry.add_to_hass(hass)
+
+    result = await mock_config_entry.start_reauth_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reauth_confirm"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], user_input={}
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    mock_iseo_client.setup_gateway.assert_called_once()
+    # The stored identity is re-enrolled, not replaced.
+    assert mock_config_entry.data[CONF_UUID] == MOCK_UUID_HEX
+    assert mock_config_entry.data[CONF_PRIV_SCALAR] == MOCK_PRIV_SCALAR
+
+
+@pytest.mark.parametrize(
+    ("side_effect", "error"),
+    [
+        (IseoConnectionError, "cannot_connect"),
+        (IseoAuthError, "auth_failed"),
+        (Exception("BOOM"), "unknown"),
+    ],
+    ids=["connection", "auth", "unknown"],
+)
+@pytest.mark.usefixtures("_patch_identity")
+async def test_reauth_flow_errors(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_iseo_client: MagicMock,
+    side_effect: Exception,
+    error: str,
+) -> None:
+    """Test the reauth form reports enrollment failures and recovers."""
+    mock_config_entry.add_to_hass(hass)
+    mock_iseo_client.setup_gateway.side_effect = side_effect
+
+    result = await mock_config_entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], user_input={}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": error}
+
+    mock_iseo_client.setup_gateway.side_effect = None
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], user_input={}
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+
+
+@pytest.mark.usefixtures("mock_iseo_client")
+async def test_reauth_flow_without_device_in_range(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Test the reauth form reports a lock that is not advertising."""
+    mock_config_entry.add_to_hass(hass)
+
+    result = await mock_config_entry.start_reauth_flow(hass)
+    with patch(
+        "homeassistant.components.iseo_argo_ble.config_flow.async_ble_device_from_address",
+        return_value=None,
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={}
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
