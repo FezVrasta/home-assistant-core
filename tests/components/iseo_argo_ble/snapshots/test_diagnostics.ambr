@@ -1,0 +1,57 @@
+# serializer version: 1
+# name: test_diagnostics
+  dict({
+    'door_status_supported': True,
+    'entry_data': dict({
+      'address': '**REDACTED**',
+      'priv_scalar': '**REDACTED**',
+      'uuid': '**REDACTED**',
+    }),
+    'last_poll_successful': True,
+    'lock_state': dict({
+      'aux_battery_low': False,
+      'battery_level': 7,
+      'door_closed': True,
+      'firmware_info': 'FW:  1.2.3',
+      'invitation_pending': False,
+      'operational_mode': 0,
+      'passage_mode_light': False,
+      'passage_mode_normal': False,
+      'privacy_mode': False,
+      'vip_mode': False,
+    }),
+    'service_info': dict({
+      'address': '**REDACTED**',
+      'advertisement': list([
+        'ISEO Lock',
+        dict({
+        }),
+        dict({
+        }),
+        list([
+          '0000f000-0000-1000-8000-00805f9b34fb',
+        ]),
+        -127,
+        -60,
+        list([
+          list([
+          ]),
+        ]),
+      ]),
+      'connectable': True,
+      'device': '**REDACTED**',
+      'manufacturer_data': dict({
+      }),
+      'name': '**REDACTED**',
+      'raw': None,
+      'rssi': -60,
+      'service_data': dict({
+      }),
+      'service_uuids': list([
+        '0000f000-0000-1000-8000-00805f9b34fb',
+      ]),
+      'source': '**REDACTED**',
+      'tx_power': -127,
+    }),
+  })
+# ---
